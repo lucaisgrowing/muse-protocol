@@ -26,7 +26,7 @@ class Flow:
     client: object | None = None
     stage: str = "empty"
     touched: float = field(default_factory=time.monotonic)
-    sent_at: float = 0
+    sent_at: float | None = None
     own_code: str | None = None
     email: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -116,7 +116,8 @@ def create_app(client_factory=MuseClient):
     def status():
         f = flow()
         return jsonify(stage=f.stage, own_code=f.own_code, email=f.email,
-                       resend_after=max(0, int(60 - (time.monotonic() - f.sent_at))))
+                       resend_after=(0 if f.sent_at is None else
+                                     max(0, int(60 - (time.monotonic() - f.sent_at)))))
 
     def require(f, *stages):
         if f.stage not in stages:
@@ -136,11 +137,11 @@ def create_app(client_factory=MuseClient):
             message = ""
             if action == "reset":
                 f.close()
-                f.stage, f.own_code, f.sent_at, f.email = "empty", None, 0, ""
+                f.stage, f.own_code, f.sent_at, f.email = "empty", None, None, ""
                 message = "本地会话已清除。服务器上的账号不会被删除。"
             elif action == "send-otp":
                 require(f, "empty", "code_sent")
-                if time.monotonic() - f.sent_at < 60:
+                if f.sent_at is not None and time.monotonic() - f.sent_at < 60:
                     raise InputError("请等待 60 秒后再发送验证码。")
                 if f.stage == "empty":
                     email = text(data, "email", 254)

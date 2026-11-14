@@ -2,7 +2,7 @@
 import re
 import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from webui import create_app, TTL
 
 
@@ -124,6 +124,30 @@ class WebUITests(unittest.TestCase):
     def test_cooldown(self):
         self.send()
         self.assertEqual(self.post("send-otp", {"email":"other@example.com"}).status_code,400)
+
+    def test_first_send_with_fresh_monotonic_clock(self):
+        # A monotonic clock has an arbitrary origin, often near zero in CI.
+        # Zero is also a valid send timestamp, not a "never sent" sentinel.
+        for now in (0.0, 10.0, -10.0):
+            with self.subTest(monotonic=now), patch("webui.time.monotonic", return_value=now):
+                self.post("reset")
+                self.assertIsNone(self.current_flow().sent_at)
+                self.assertEqual(self.client.get("/api/status").json["resend_after"], 0)
+                self.send()
+                self.assertEqual(self.current_flow().sent_at, now)
+                self.assertEqual(self.client.get("/api/status").json["resend_after"], 60)
+                self.assertEqual(self.post("send-otp").status_code, 400)
+                with patch("webui.time.monotonic", return_value=now + 60):
+                    self.assertEqual(self.client.get("/api/status").json["resend_after"], 0)
+                    self.assertEqual(self.post("send-otp").status_code, 200)
+
+    def test_reset_allows_first_send_with_fresh_clock(self):
+        with patch("webui.time.monotonic", return_value=5.0):
+            self.send()
+            self.assertEqual(self.post("reset").status_code, 200)
+            self.assertIsNone(self.current_flow().sent_at)
+            self.assertEqual(self.client.get("/api/status").json["resend_after"], 0)
+            self.send()
 
     def test_resend_existing_client_and_email(self):
         c = self.send()
