@@ -12,6 +12,23 @@ cp config.example.json config.json   # 填入邮箱与可选代理
 python example_register.py
 ```
 
+## Web UI（新增）
+
+现在可以用中文浏览器操作台逐步完成邮箱验证、注册资料、激活与邀请码兑换。无需前端构建，原命令行示例保持可用。
+
+```bash
+python -m pip install -r requirements-web.txt
+python webui.py
+```
+
+在同一台电脑打开 **http://127.0.0.1:7860**。此地址不是公网访问链接，服务只监听本机；Web UI 不读取示例 `config.json`，请在页面中填写真实资料。
+
+![Web UI 实际本地页面](docs/webui-desktop.png)
+
+[完整安装、操作与安全说明](docs/WEBUI.md) · [移动视口截图](docs/webui-mobile.png)
+
+界面和交互已用离线模拟客户端验证，未实测真实注册或兑换，不代表服务端流程始终可用。
+
 ## 目录结构
 
 ```
@@ -19,8 +36,12 @@ musepy/
   client.py    注册 + 兑换的完整协议客户端
   falco.py     行为埋点上报（可选）
   caa.py       注册漏斗事件上报（可选）
-example_register.py   端到端示例
-config.example.json   配置模板
+example_register.py   原有命令行端到端示例
+webui.py              本地 Flask + Waitress Web UI
+web/                  HTML、CSS、JS（无需构建）
+tests/                离线与浏览器交互检查
+requirements-web.txt  Web UI 依赖
+config.example.json   命令行配置模板
 ```
 
 ## 协议流程

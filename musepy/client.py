@@ -187,16 +187,20 @@ class MuseClient:
         """必须调用，否则兑换会返回误导性的 invalid"""
         r = self.s.get(BASE + "/?aymh_complete=1", impersonate=self.fp,
                        headers=self._h(HEADERS_HTML))
+        if r.status_code != 200:
+            raise MuseError(f"VM page {r.status_code}")
         m = re.search(r'vmId[\\"]*:[\\"]*([0-9a-fA-F-]{36})', r.text)
         if not m:
             return None
         vm_id = m.group(1)
-        self.s.post(BASE + "/api/hatch/vm/wake", impersonate=self.fp,
+        wake = self.s.post(BASE + "/api/hatch/vm/wake", impersonate=self.fp,
                     headers=self._h(HEADERS_JSON),
                     data=json.dumps({"vm_id": vm_id,
                                      "retry_count": 0,
                                      "connect_attempt_id": _uuid(),
                                      "wake_trigger": "resume"}))
+        if wake.status_code != 200:
+            raise MuseError(f"VM wake {wake.status_code}")
         return vm_id
 
     def stateful_sharing(self):
@@ -213,9 +217,9 @@ class MuseClient:
         r = self.s.post(BASE + "/api/hatch/invite-code/redeem", impersonate=self.fp,
                         headers=self._h(HEADERS_JSON),
                         data=json.dumps({"code": code, "supportsRedemptionStatus": True}))
-        if r.status_code == 200 and '"success":true' in r.text:
-            return True, "redeemed"
         data = self._json(r)
+        if r.status_code == 200 and data.get("success") is True:
+            return True, "redeemed"
         return False, data.get("reason") or f"http-{r.status_code}"
 
     def scratch_code(self):

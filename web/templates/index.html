@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf }}"><meta name="color-scheme" content="light">
+<title>Muse Protocol · 本地操作台</title>
+<link rel="icon" href="{{ url_for('static', filename='mark.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+<a class="brand" href="/" aria-label="Muse Protocol 首页"><img src="{{ url_for('static', filename='mark.svg') }}" alt="" width="36" height="36"><span>MUSE<span class="brand-sub">PROTOCOL / WORKSPACE</span></span></a>
+<div class="nav-label">工作空间</div>
+<div class="nav-active"><span class="nav-icon">⌘</span> 账号与邀请 <span class="nav-dot"></span></div>
+<div class="side-note"><span class="small-orb"></span><div>只在本地，保持简单。<p>分步操作，不自动批量注册。<br>会话仅保留在服务内存中。</p></div></div>
+<div class="side-footer"><span class="tiny-dot"></span> LOCAL WORKSPACE <span>v1.0</span></div>
+</aside>
+<main>
+<header class="topbar"><span>工作空间 <span class="slash">/</span> 账号与邀请</span><span class="local-pill"><span class="tiny-dot"></span> 本地模式</span></header>
+<section class="page-heading"><div><div class="eyebrow">MUSE PROTOCOL</div><h1>每一步，都清楚。</h1><p>验证邮箱、完成注册，再兑换你的邀请码。</p></div><div class="heading-art" aria-hidden="true"><span></span><span></span><span></span></div></section>
+<div class="notice"><span class="notice-symbol">i</span><p>这是非官方协议研究工具。请使用真实资料并遵守服务条款；注册、兑换及地区可用性以服务端实际返回为准。</p></div>
+<section class="workspace">
+<div class="flow-area">
+<div class="stepper" aria-label="操作进度"><div data-step="1" class="step current"><span>01</span><b>邮箱验证</b></div><div class="step-line"></div><div data-step="2" class="step"><span>02</span><b>账号资料</b></div><div class="step-line"></div><div data-step="3" class="step"><span>03</span><b>邀请码</b></div></div>
+<div class="form-card">
+<div class="card-top"><span class="section-kicker" id="section-kicker">STEP 01 / VERIFY</span><span class="card-status" id="card-status">尚未开始</span></div>
+<section id="panel-verify" class="panel">
+<h2>从你的邮箱开始</h2><p class="card-description">发送一次验证码，连接属于你的账号。</p>
+<form id="email-form"><label for="email">邮箱地址 <span>必填</span></label><input id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email" required maxlength="254">
+<details id="network-settings"><summary>网络设置 <span>可选代理</span></summary><div class="details-inner"><label for="proxy">代理地址</label><input id="proxy" name="proxy" type="password" placeholder="http://127.0.0.1:7890" autocomplete="off" maxlength="1000"><p class="field-help">留空使用当前网络。地区未自动检测，不会替你更改出口。</p></div></details>
+<button type="submit" class="primary" id="send-button">发送验证码 <span aria-hidden="true">↗</span></button></form>
+<form id="otp-form" hidden><div class="separator"></div><label for="code">邮箱验证码</label><input class="otp-input" id="code" name="code" placeholder="000000" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required><p class="field-help">验证码只用于当前请求，不写入配置文件。</p><button type="submit" class="primary">验证邮箱 <span aria-hidden="true">→</span></button></form>
+</section>
+<section id="panel-profile" class="panel" hidden>
+<h2>认识真实的你</h2><p class="card-description">填写本人的真实资料，不生成或代填身份信息。</p>
+<form id="profile-form"><div class="field-row"><div><label for="last-name">姓</label><input id="last-name" name="last_name" autocomplete="family-name" required maxlength="100" placeholder="姓氏"></div><div><label for="first-name">名</label><input id="first-name" name="first_name" autocomplete="given-name" required maxlength="100" placeholder="名字"></div></div><label for="dob">出生日期</label><input id="dob" name="date_of_birth" type="date" autocomplete="bday" required min="1900-01-01"><p class="field-help">年龄要求由目标服务决定，请勿填写虚假生日。</p><p class="terms-note">提交将按现有协议客户端创建账号。继续前请阅读 <a href="https://muse.ai" target="_blank" rel="noopener noreferrer">Muse 官网的条款与隐私说明 ↗</a>。</p><button type="submit" class="primary">提交资料并注册 <span aria-hidden="true">→</span></button></form>
+<div id="activation-area" hidden><div class="ready-icon" aria-hidden="true">✓</div><h3>注册接口已成功</h3><p class="field-help">下一步会按客户端协议接受服务条款并激活会话。</p><button type="button" class="primary" id="activate-button">接受条款并激活会话 <span aria-hidden="true">→</span></button></div>
+</section>
+<section id="panel-invite" class="panel" hidden>
+<h2>让邀请，开始连接</h2><p class="card-description">先准备会话，再手动提交你的邀请码。</p>
+<div id="wake-area"><div class="inline-note">准备步骤会取得 VM 标识、发送唤醒请求并启用协议所需的状态共享。</div><button type="button" class="primary" id="wake-button">准备兑换会话 <span aria-hidden="true">→</span></button></div>
+<form id="invite-form" hidden><label for="invite-code">邀请码</label><input id="invite-code" name="invite_code" placeholder="输入你收到的邀请码" maxlength="128" autocomplete="off" required><p class="field-help">兑换结果以服务端为准，不自动重试或轮换邀请码。</p><button type="submit" class="primary">兑换邀请码 <span aria-hidden="true">↗</span></button></form>
+<div id="success-area" hidden><div class="ready-icon" aria-hidden="true">✓</div><h3>兑换成功</h3><p class="field-help">服务端已确认兑换，你可以获取自己的邀请码。</p><button type="button" class="secondary" id="own-button">获取我的邀请码</button><div id="own-code-box" hidden><span>你的邀请码</span><div><code id="own-code"></code><button type="button" id="copy-button" class="text-button">复制</button></div></div></div>
+</section>
+<section id="panel-uncertain" class="panel" hidden><h2>先确认上一次结果</h2><p class="card-description">请求结果不明确，操作可能已经生效。为避免重复注册或兑换，已暂停后续提交。</p><a class="primary link-button" href="https://muse.ai" target="_blank" rel="noopener noreferrer">到官网确认 <span>↗</span></a><p class="field-help">确认后可清除本地会话，重新通过邮箱登录。</p></section>
+<div id="feedback" class="feedback" role="status" aria-live="polite" hidden></div>
+<div class="card-bottom"><span><span class="lock-symbol" aria-hidden="true">◇</span> 验证码与会话不落盘</span><button type="button" id="reset-button" class="text-button">清除会话</button></div>
+</div>
+<p class="under-card">不读取 config.json，不保存输入的代理凭据。页面刷新后保留当前步骤，重启服务或闲置 30 分钟后清除。</p>
+</div>
+<aside class="context-area"><section class="context-card"><div class="context-icon" aria-hidden="true">✳</div><h3>留在你的掌控中。</h3><p>每次只执行你点击的那一步。不会在后台自动注册、兑换或导出登录凭据。</p><div class="context-divider"></div><div class="fact"><span>连接方式</span><b>本地 Web UI</b></div><div class="fact"><span>目标服务</span><b>muse.ai ↗</b></div><div class="fact"><span>会话保留</span><b>30 分钟闲置过期</b></div></section>
+<section class="activity-card"><div class="activity-title"><h3>本次操作</h3><span id="event-count">00</span></div><ol id="activity-list"><li class="empty-event">你的操作记录会显示在这里。</li></ol><p>只记录步骤状态，不显示验证码或 Cookie。</p></section></aside>
+</section>
+<footer class="page-footer"><span>Muse Protocol <span class="slash">/</span> 非官方 · 个人学习与研究</span><a href="https://github.com/lucaisgrowing/muse-protocol" target="_blank" rel="noopener noreferrer">查看源代码 ↗</a></footer>
+</main></div>
+<dialog id="reset-dialog"><h2>清除本地会话？</h2><p>会移除当前连接与本页操作记录，不会删除服务器上的账号，也不会撤销已完成的兑换。</p><div class="dialog-actions"><button type="button" class="secondary" id="cancel-reset">保留会话</button><button type="button" class="primary" id="confirm-reset">清除会话</button></div></dialog>
+</body></html>
