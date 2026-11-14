@@ -1,7 +1,7 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 let stage = 'empty', busy = false, resendUntil = 0, count = 0;
-const names = {empty:'尚未开始',code_sent:'待验证邮箱',verified:'邮箱已验证',registered:'待激活',active:'会话已激活',ready:'可尝试兑换',redeemed:'兑换成功',uncertain:'需要确认结果'};
+const names = {empty:'尚未开始',code_sent:'待验证邮箱',verified:'邮箱已验证',registered:'待激活',active:'会话已激活',ready:'可尝试兑换',redeemed:'兑换成功',already_redeemed:'已兑换过',uncertain:'需要确认结果'};
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const today = new Date();
 $('dob').max = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
@@ -34,7 +34,9 @@ function render() {
   $('activation-area').hidden = stage !== 'registered';
   $('wake-area').hidden = stage !== 'active';
   $('invite-form').hidden = stage !== 'ready';
-  $('success-area').hidden = stage !== 'redeemed';
+  $('success-area').hidden = !['redeemed','already_redeemed'].includes(stage);
+  $('success-title').textContent = stage === 'already_redeemed' ? '账号已兑换过' : '兑换成功';
+  $('success-description').textContent = stage === 'already_redeemed' ? '该账号之前已兑换过邀请码，可以尝试获取自己的邀请码。' : '服务端已确认兑换，你可以获取自己的邀请码。';
   document.body.classList.toggle('busy', busy);
   document.querySelectorAll('button').forEach(e => e.disabled = busy);
   $('email').disabled = busy || stage === 'code_sent';

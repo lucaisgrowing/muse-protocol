@@ -13,12 +13,12 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify, render_template, request, session
 from werkzeug.exceptions import HTTPException
 
-from musepy.client import MuseClient, MuseError
+from musepy.client import MuseClient, MuseError, MuseHTTPError
 
 TTL = 30 * 60
 MAX_SESSIONS = 64
 STEPS = {"empty": 0, "code_sent": 1, "verified": 2, "registered": 3,
-         "active": 4, "ready": 5, "redeemed": 6, "uncertain": -1}
+         "active": 4, "ready": 5, "redeemed": 6, "already_redeemed": 6, "uncertain": -1}
 
 
 @dataclass
@@ -162,7 +162,18 @@ def create_app(client_factory=MuseClient):
                 # Resend keeps the same client and recipient, including after a page refresh.
                 # Do not retry automatically: a timeout may still mean the OTP was sent.
                 f.sent_at = time.monotonic()
-                f.client.send_otp(f.email)
+                try:
+                    f.client.send_otp(f.email)
+                except MuseHTTPError as exc:
+                    if 400 <= exc.status_code < 500 and exc.status_code not in (408, 409, 429):
+                        raise  # An explicit refusal: do not claim an email was sent.
+                    f.stage = "code_sent"  # A server error can be ambiguous.
+                    raise
+                except Exception:
+                    # The request may have reached the server before the connection failed.
+                    # Keep the same client and allow an arriving code to be entered.
+                    f.stage = "code_sent"
+                    raise
                 f.stage = "code_sent"
                 message = "验证码发送请求已成功，请查看邮箱。"
             elif action == "confirm-otp":
@@ -192,7 +203,14 @@ def create_app(client_factory=MuseClient):
                     raise InputError("请填写真实且有效的生日。")
                 # A failed/ambiguous write must not be blindly replayed by the UI.
                 f.stage = "uncertain"
-                f.client.register_completion(dob.isoformat(), first, last)
+                try:
+                    f.client.register_completion(dob.isoformat(), first, last)
+                except MuseHTTPError as exc:
+                    # A definitive client-error response is a refusal, not an
+                    # ambiguous submission. Preserve verified state for edits.
+                    if 400 <= exc.status_code < 500 and exc.status_code not in (408, 409, 429):
+                        f.stage = "verified"
+                    raise
                 f.stage = "registered"
                 message = "注册接口已成功，下一步激活会话。"
             elif action == "activate":
@@ -218,7 +236,9 @@ def create_app(client_factory=MuseClient):
                 f.stage = "uncertain"
                 ok, reason = f.client.redeem(invite)
                 if not ok:
-                    if reason in {"already_redeemed", "used_up", "invalid"}:
+                    if reason == "already_redeemed":
+                        f.stage = "already_redeemed"
+                    elif reason in {"used_up", "invalid"}:
                         f.stage = "ready"
                     reasons = {"already_redeemed": "该账号已经兑换过邀请码。", "used_up": "邀请码的使用次数已用尽。",
                                "invalid": "服务端认为邀请码无效，请核对邀请码和 VM 状态。"}
@@ -226,7 +246,7 @@ def create_app(client_factory=MuseClient):
                 f.stage = "redeemed"
                 message = "服务端已确认兑换成功。"
             elif action == "own-code":
-                require(f, "redeemed")
+                require(f, "redeemed", "already_redeemed")
                 own = f.client.scratch_code()
                 if not own:
                     raise MuseError("invite code unavailable")
@@ -240,7 +260,12 @@ def create_app(client_factory=MuseClient):
             # Never return them or log them. Only a whitelisted HTTP status is exposed.
             status_match = re.search(r"\b(400|401|403|404|409|429|500|502|503|504)\b", str(exc))
             suffix = f"（HTTP {status_match.group(1)}）" if status_match else ""
-            uncertain = "结果可能已生效，请到官网确认后再继续。" if f.stage == "uncertain" else "请检查网络或代理后再手动操作。"
+            if action == "send-otp" and f.stage == "code_sent":
+                uncertain = "发送结果不明确；如果收到邮件，可以直接输入验证码。"
+            elif action == "register" and f.stage == "verified":
+                uncertain = "服务端拒绝了注册，请检查资料后再手动重试。"
+            else:
+                uncertain = "结果可能已生效，请到官网确认后再继续。" if f.stage == "uncertain" else "请检查网络或代理后再手动操作。"
             return jsonify(error=f"服务请求未能完成{suffix}。{uncertain}", stage=f.stage), 502
         finally:
             f.touched = time.monotonic()

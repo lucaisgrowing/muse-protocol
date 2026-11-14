@@ -28,6 +28,42 @@ class ClientTests(unittest.TestCase):
         self.client.s.post.return_value=r
         self.assertEqual(self.client.redeem("TEST"),(False,"http-200"))
 
+    def test_documented_redemption_status(self):
+        r = Mock(status_code=200)
+        r.json.return_value = {"redemptionStatus": "redeemed"}
+        self.client.s.post.return_value = r
+        self.assertEqual(self.client.redeem("TEST"), (True, "redeemed"))
+
+    def test_conflicting_redemption_response_is_unknown(self):
+        r = Mock(status_code=200)
+        self.client.s.post.return_value = r
+        for payload in ({"success": False, "redemptionStatus": "redeemed"},
+                        {"success": True, "reason": "invalid"},
+                        {"success": 1, "redemptionStatus": "redeemed"},
+                        {"success": True, "redemptionStatus": "invalid"}):
+            with self.subTest(payload=payload):
+                r.json.return_value = payload
+                self.assertEqual(self.client.redeem("TEST"), (False, "http-200"))
+
+    def test_already_redeemed_from_status(self):
+        r = Mock(status_code=200)
+        r.json.return_value = {"redemptionStatus":"already_redeemed"}
+        self.client.s.post.return_value = r
+        self.assertEqual(self.client.redeem("TEST"), (False, "already_redeemed"))
+
+    def test_server_error_does_not_claim_rejection_or_success(self):
+        r = Mock(status_code=503)
+        r.json.return_value = {"reason":"invalid"}
+        self.client.s.post.return_value = r
+        self.assertEqual(self.client.redeem("TEST"), (False, "http-503"))
+
+    def test_register_http_error_has_status(self):
+        from musepy.client import MuseHTTPError
+        self.client.s.post.return_value = Mock(status_code=403)
+        with self.assertRaises(MuseHTTPError) as ctx:
+            self.client.register_completion("1990-01-01", "A", "B")
+        self.assertEqual(ctx.exception.status_code, 403)
+
     def test_vm_page_error(self):
         self.client.s.get.return_value=Mock(status_code=403)
         with self.assertRaises(MuseError): self.client.wake_vm()

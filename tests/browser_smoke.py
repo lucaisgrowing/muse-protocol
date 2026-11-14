@@ -9,6 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from playwright.sync_api import sync_playwright
 from werkzeug.serving import make_server
+from unittest.mock import Mock
+from musepy.client import MuseHTTPError
 from test_webui import FakeClient
 from webui import create_app
 
@@ -61,6 +63,45 @@ try:
         desktop.get_by_role('heading',name='从你的邮箱开始').wait_for()
         assert desktop.get_by_label('邮箱地址').input_value()==''
         checks.append('reset dialog cancel/confirm and clear fields')
+        # Exercise the three reported failure paths using only fake responses.
+        original_send = FakeClient.send_otp
+        FakeClient.send_otp = lambda self, email: (_ for _ in ()).throw(TimeoutError())
+        edge = browser.new_page(viewport={'width':1440,'height':1100})
+        edge.on('pageerror',lambda error:errors.append(str(error)))
+        edge.goto(url)
+        edge.wait_for_function("!document.getElementById('send-button').disabled")
+        edge.get_by_label('邮箱地址').fill('edge@example.com')
+        edge.get_by_role('button',name='发送验证码').click()
+        edge.get_by_label('邮箱验证码').wait_for(state='visible')
+        assert '发送结果不明确' in edge.locator('#feedback').inner_text()
+        client=FakeClient.instances[-1]
+        FakeClient.send_otp = original_send
+        edge.reload()
+        edge.get_by_label('邮箱验证码').wait_for(state='visible')
+        edge.get_by_label('邮箱验证码').fill('123456')
+        edge.get_by_role('button',name='验证邮箱',exact=True).click()
+        edge.get_by_role('heading',name='认识真实的你').wait_for()
+        edge.get_by_label('姓',exact=True).fill('测试')
+        edge.get_by_label('名',exact=True).fill('用户')
+        edge.get_by_label('出生日期').fill('1995-06-18')
+        client.register_completion=Mock(side_effect=[MuseHTTPError('register-completion',403), {}])
+        edge.get_by_role('button',name='提交资料并注册').click()
+        edge.get_by_text('服务端拒绝了注册', exact=False).wait_for()
+        assert edge.get_by_label('名',exact=True).is_editable()
+        edge.get_by_role('button',name='提交资料并注册').click()
+        edge.get_by_role('button',name='接受条款并激活会话').click()
+        edge.get_by_role('button',name='准备兑换会话').click()
+        edge.get_by_label('邀请码',exact=True).fill('MOCK-ONLY')
+        client.redeem=Mock(return_value=(False,'already_redeemed'))
+        edge.get_by_role('button',name='兑换邀请码',exact=True).click()
+        edge.get_by_role('heading',name='账号已兑换过').wait_for()
+        edge.reload()
+        edge.get_by_role('heading',name='账号已兑换过').wait_for()
+        edge.get_by_role('button',name='获取我的邀请码').click()
+        edge.wait_for_function("document.getElementById('own-code').textContent==='TEST-INVITE'")
+        assert client.redeem.call_count == 1
+        checks.append('mocked OTP timeout recovery, explicit 403 retry, already-redeemed and own-code')
+        edge.close()
         mobile=browser.new_page(viewport={'width':390,'height':844},device_scale_factor=1,is_mobile=True,has_touch=True)
         mobile.on('pageerror',lambda error:errors.append(str(error)))
         mobile.goto(url)

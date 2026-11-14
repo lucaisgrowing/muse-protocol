@@ -52,6 +52,15 @@ class MuseError(RuntimeError):
     """协议流程中的可预期失败"""
 
 
+class MuseHTTPError(MuseError):
+    """A response was received from the service, with its status available separately."""
+
+    def __init__(self, operation, status_code):
+        self.operation = operation
+        self.status_code = status_code
+        super().__init__(f"{operation} HTTP {status_code}")
+
+
 class MuseClient:
     """一个账号 = 一个 Session（一个出口 IP）"""
 
@@ -115,7 +124,7 @@ class MuseClient:
         r = self.s.post(BASE + "/api/auth/native/send-otp", impersonate=self.fp,
                         headers=self._auth_headers(), data=json.dumps({"contact_point": email}))
         if r.status_code not in (200, 201):
-            raise MuseError(f"send-otp {r.status_code}: {r.text[:120]}")
+            raise MuseHTTPError("send-otp", r.status_code)
         return self._json(r)
 
     def confirm_otp(self, code):
@@ -146,7 +155,7 @@ class MuseClient:
         r = self.s.post(BASE + "/api/auth/native/register-completion", impersonate=self.fp,
                         headers=self._auth_headers(), data=json.dumps(body))
         if r.status_code != 200:
-            raise MuseError(f"register-completion {r.status_code}: {r.text[:120]}")
+            raise MuseHTTPError("register-completion", r.status_code)
         data = self._json(r)
         self.account_id = (data.get("auth_meta_session") or {}).get("frl_account_id")
         return data
@@ -218,9 +227,29 @@ class MuseClient:
                         headers=self._h(HEADERS_JSON),
                         data=json.dumps({"code": code, "supportsRedemptionStatus": True}))
         data = self._json(r)
-        if r.status_code == 200 and data.get("success") is True:
-            return True, "redeemed"
-        return False, data.get("reason") or f"http-{r.status_code}"
+        if not isinstance(data, dict):
+            return False, f"http-{r.status_code}"
+        # The documented response is {redemptionStatus: "redeemed"}; some
+        # responses instead use {success: true}. Contradictory evidence stays
+        # unknown, rather than risking a false success or an unsafe retry.
+        status = data.get("redemptionStatus")
+        success = data.get("success")
+        reason = data.get("reason")
+        if r.status_code == 200:
+            if (success is True and status in (None, "redeemed") and not reason) or (
+                status == "redeemed" and (success is None or success is True) and not reason
+            ):
+                return True, "redeemed"
+            if success is not True and status != "redeemed":
+                if reason in ("already_redeemed", "used_up", "invalid"):
+                    return False, reason
+                if status in ("already_redeemed", "used_up", "invalid"):
+                    return False, status
+        # A known refusal may also be reported with a 4xx response. 5xx and
+        # contradictory responses remain ambiguous and must not be retried.
+        elif 400 <= r.status_code < 500 and reason in ("already_redeemed", "used_up", "invalid"):
+            return False, reason
+        return False, f"http-{r.status_code}"
 
     def scratch_code(self):
         """兑换成功后刮出自己的邀请码"""

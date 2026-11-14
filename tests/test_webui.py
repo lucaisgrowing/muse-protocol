@@ -4,6 +4,7 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 from webui import create_app, TTL
+from musepy.client import MuseHTTPError
 
 
 class FakeClient:
@@ -66,6 +67,60 @@ class WebUITests(unittest.TestCase):
         self.assertEqual(self.post("activate").json["stage"], "active")
         self.assertEqual(self.post("wake").json["stage"], "ready")
         return client
+
+    def test_otp_timeout_keeps_client_and_allows_code(self):
+        with patch.object(FakeClient, "send_otp", side_effect=TimeoutError("sensitive")):
+            r = self.post("send-otp", {"email": "person@example.com"})
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(r.json["stage"], "code_sent")
+        self.assertIn("可以直接输入验证码", r.json["error"])
+        self.assertNotIn("sensitive", r.text)
+        self.assertEqual(self.client.get("/api/status").json["email"], "person@example.com")
+        self.assertGreater(self.client.get("/api/status").json["resend_after"], 0)
+        self.assertEqual(self.post("confirm-otp", {"code": "123456"}).json["stage"], "verified")
+        self.assertEqual(len(FakeClient.instances), 1)
+
+    def test_otp_explicit_rejection_does_not_enter_code_stage(self):
+        with patch.object(FakeClient, "send_otp", side_effect=MuseHTTPError("send-otp", 403)):
+            r = self.post("send-otp", {"email": "person@example.com"})
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(r.json["stage"], "empty")
+
+    def test_otp_server_error_allows_code(self):
+        with patch.object(FakeClient, "send_otp", side_effect=MuseHTTPError("send-otp", 503)):
+            r = self.post("send-otp", {"email": "person@example.com"})
+        self.assertEqual(r.json["stage"], "code_sent")
+        self.assertEqual(self.post("confirm-otp", {"code": "123456"}).json["stage"], "verified")
+
+    def test_403_registration_can_be_corrected_and_retried(self):
+        c = self.verified()
+        c.register_completion = Mock(side_effect=[MuseHTTPError("register-completion", 403), {}])
+        data = {"first_name":"A", "last_name":"B", "date_of_birth":"1990-01-01"}
+        r = self.post("register", data)
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(r.json["stage"], "verified")
+        self.assertIn("HTTP 403", r.json["error"])
+        self.assertEqual(self.post("register", data).json["stage"], "registered")
+        self.assertEqual(c.register_completion.call_count, 2)
+
+    def test_registration_503_stays_uncertain(self):
+        c = self.verified()
+        c.register_completion = Mock(side_effect=MuseHTTPError("register-completion", 503))
+        r = self.post("register", {"first_name":"A", "last_name":"B", "date_of_birth":"1990-01-01"})
+        self.assertEqual(r.json["stage"], "uncertain")
+        self.assertEqual(self.post("register").status_code, 400)
+        self.assertEqual(c.register_completion.call_count, 1)
+
+    def test_already_redeemed_can_fetch_code_without_false_success(self):
+        c = self.ready()
+        c.redeem = Mock(return_value=(False, "already_redeemed"))
+        r = self.post("redeem", {"invite_code":"ABC"})
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(r.json["stage"], "already_redeemed")
+        self.assertEqual(self.client.get("/api/status").json["stage"], "already_redeemed")
+        self.assertEqual(self.post("own-code").json["own_code"], "TEST-INVITE")
+        self.assertEqual(self.post("redeem", {"invite_code":"ABC"}).status_code, 400)
+        self.assertEqual(c.redeem.call_count, 1)
 
     def test_home_and_assets(self):
         self.assertEqual(self.home.status_code, 200)
